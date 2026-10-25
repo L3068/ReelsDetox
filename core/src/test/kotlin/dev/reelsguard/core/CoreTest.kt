@@ -75,22 +75,27 @@ class CoreTest {
         val button = UiNode("com.instagram.android:id/clips_tab", UiLabel.REELS,
             Bounds(400, 1750, 550, 1870), clickable = true)
         assertEquals(button.bounds, OverlayPolicy.candidate(screen(button), enabled, true))
+        val localizedButton = button.copy(viewId = null)
+        assertEquals(localizedButton.bounds, OverlayPolicy.candidate(screen(localizedButton), enabled, true))
+        val partiallySystemCovered = button.copy(bounds = Bounds(400, 1800, 550, 1950))
+        assertEquals(partiallySystemCovered.bounds,
+            OverlayPolicy.candidate(screen(partiallySystemCovered), enabled, true))
         assertNull(OverlayPolicy.candidate(screen(button), enabled, false))
         assertNull(OverlayPolicy.candidate(screen(button), enabled.copy(hideButton = false), true))
         assertNull(OverlayPolicy.candidate(screen(button), Settings(), true))
         assertNull(OverlayPolicy.candidate(screen(button, button.copy(bounds = Bounds(600, 1750, 750, 1870))), enabled, true))
-        for (bounds in listOf(Bounds(400, 1850, 550, 1990), app, Bounds(400, 100, 550, 220), Bounds(-1, 1750, 150, 1870))) {
+        for (bounds in listOf(Bounds(400, 1950, 550, 2100), app, Bounds(400, 100, 550, 220), Bounds(-1, 1750, 150, 1870))) {
             assertNull(OverlayPolicy.candidate(screen(button.copy(bounds = bounds)), enabled, true))
         }
-        assertNull(OverlayPolicy.candidate(screen(button.copy(viewId = null)), enabled, true))
+        assertNull(OverlayPolicy.candidate(screen(button.copy(viewId = null, label = null)), enabled, true))
         assertNull(OverlayPolicy.candidate(screen(button, complete = false), enabled, true))
     }
 
-    @Test fun `back gate allows one attempt and uncertainty never rearms`() {
+    @Test fun `back gate repeats blocked attempts after cooldown`() {
         val gate = BackGate()
         assertTrue(gate.observe(Classification.REELS, true, true, 0))
         assertFalse(gate.observe(Classification.UNKNOWN, true, true, 2000))
-        assertFalse(gate.observe(Classification.REELS, true, true, 4000))
+        assertTrue(gate.observe(Classification.REELS, true, true, 4000))
         assertFalse(gate.observe(Classification.OTHER, true, true, 5000))
         assertTrue(gate.observe(Classification.REELS, true, true, 6000))
         assertFalse(gate.observe(Classification.UNKNOWN, false, true, 7000))
@@ -101,11 +106,11 @@ class CoreTest {
         val gate = BackGate(cooldownMillis = 1500)
         assertTrue(gate.observe(Classification.REELS, true, true, 0))
         gate.observe(Classification.REELS, true, false, 100)
-        assertFalse(gate.observe(Classification.REELS, true, true, 2000))
+        assertTrue(gate.observe(Classification.REELS, true, true, 2000))
         gate.observe(Classification.OTHER, true, true, 2100)
         assertTrue(gate.observe(Classification.REELS, true, true, 2200))
         gate.observe(Classification.OTHER, true, true, 2300)
-        assertFalse(gate.observe(Classification.REELS, true, true, 2400))
+        assertTrue(gate.observe(Classification.REELS, true, true, 2400))
         assertTrue(gate.observe(Classification.REELS, true, true, 4000))
     }
 

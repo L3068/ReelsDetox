@@ -102,13 +102,13 @@ internal class InstagramSnapshot(private val service: AccessibilityService) {
     }
 
     private fun label(description: CharSequence?): UiLabel? = when (description?.toString()?.trim()?.lowercase(Locale.ROOT)) {
-        "reels" -> UiLabel.REELS
-        "like" -> UiLabel.LIKE
-        "comment" -> UiLabel.COMMENT
-        "share" -> UiLabel.SHARE
-        "home" -> UiLabel.HOME
-        "stories" -> UiLabel.STORIES
-        "direct", "messages" -> UiLabel.DIRECT
+        "reels", "reels-videók" -> UiLabel.REELS
+        "like", "kedvelés" -> UiLabel.LIKE
+        "comment", "hozzászólás" -> UiLabel.COMMENT
+        "share", "megosztás" -> UiLabel.SHARE
+        "home", "kezdőlap" -> UiLabel.HOME
+        "stories", "történetek" -> UiLabel.STORIES
+        "direct", "messages", "üzenetek" -> UiLabel.DIRECT
         else -> null
     }
 }

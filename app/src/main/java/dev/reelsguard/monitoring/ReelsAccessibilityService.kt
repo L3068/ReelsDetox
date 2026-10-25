@@ -12,6 +12,7 @@ import android.view.accessibility.AccessibilityEvent
 import dev.reelsguard.ReelsGuardApp
 import dev.reelsguard.data.bootCount
 import dev.reelsguard.core.BackGate
+import dev.reelsguard.core.Bounds
 import dev.reelsguard.core.CandidateInstagramClassifier
 import dev.reelsguard.core.Classification
 import dev.reelsguard.core.OverlayPolicy
@@ -50,6 +51,7 @@ class ReelsAccessibilityService : AccessibilityService() {
     private var connected = false
     private var receiverRegistered = false
     private var navigationFailed = false
+    private var lastCoverBounds: Bounds? = null
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -75,7 +77,10 @@ class ReelsAccessibilityService : AccessibilityService() {
         scope.launch {
             repository.state.map { Triple(it.settings, it.ready, it.error) }.distinctUntilChanged().collect {
                 // User's disable/revoke takes effect before any suspended persistence operation resumes.
-                if (!it.first.enabled || !it.first.consent || !it.second || it.third) cover.hide()
+                if (!it.first.enabled || !it.first.consent || !it.second || it.third) {
+                    lastCoverBounds = null
+                    cover.hide()
+                }
                 signal()
             }
         }
@@ -97,15 +102,40 @@ class ReelsAccessibilityService : AccessibilityService() {
         // Overlay's own accessibility events must not create an add/remove feedback loop.
         if (event.packageName?.toString() == packageName && reader.foreground()) return
         val foreground = reader.foreground()
-        if (!foreground) cover.hide()
+        if (event.packageName?.toString() == INSTAGRAM) {
+            showCachedCoverImmediately()
+            refreshCoverImmediately()
+        }
+        if (!foreground) cover.hideDelayed()
         // Content events from background apps are ignored; metadata-only window events are needed
         // across all packages to promptly remove covers on app/system-window transitions.
         if (event.packageName?.toString() != INSTAGRAM && foreground &&
             event.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED ||
-            event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) cover.hide()
+        // A scroll can temporarily invalidate the tree, but evaluate() immediately re-reads it
+        // and either updates the exact button bounds or removes the stale cover.
         signal()
+    }
+
+    private fun refreshCoverImmediately() {
+        val app = repository.state.value
+        if (!app.ready || app.error || !app.settings.enabled || !app.settings.consent ||
+            !ProtectionPolicy.shouldBlock(app.settings, tracker?.usedTodayMillis ?: 0L)) return
+        val screen = reader.read() ?: return
+        val bounds = OverlayPolicy.candidate(screen, app.settings, true)
+        if (bounds != null && reader.foreground()) {
+            lastCoverBounds = bounds
+            cover.show(bounds)
+        }
+    }
+
+    private fun showCachedCoverImmediately() {
+        val app = repository.state.value
+        val cached = lastCoverBounds
+        if (cached != null && app.ready && !app.error && app.settings.enabled && app.settings.consent &&
+            ProtectionPolicy.shouldBlock(app.settings, tracker?.usedTodayMillis ?: 0L)) {
+            cover.show(cached)
+        }
     }
 
     private fun signal() { revision++; signals.trySend(Unit) }
@@ -141,7 +171,7 @@ class ReelsAccessibilityService : AccessibilityService() {
         }
         wasViewing = viewing
         // No global action or overlay may use a snapshot made stale while DataStore suspended.
-        if (observedRevision != revision || !connected) { cover.hide(); return }
+        if (observedRevision != revision || !connected) return
         if (!authorized || !foreground || !reader.foreground()) {
             cover.hide(); stopTicker()
             back.observe(Classification.UNKNOWN, reader.instagramActive() != false, false, now)
@@ -154,7 +184,10 @@ class ReelsAccessibilityService : AccessibilityService() {
             navigationFailed = !performGlobalAction(GLOBAL_ACTION_BACK)
         } else {
             val bounds = OverlayPolicy.candidate(screen!!, settings, blocking)
-            if (bounds != null && reader.foreground()) cover.show(bounds) else cover.hide()
+            if (bounds != null && reader.foreground()) {
+                lastCoverBounds = bounds
+                cover.show(bounds)
+            } else cover.hideDelayed()
         }
         if (classification == Classification.OTHER) navigationFailed = false
         RuntimeState.publish(ServiceStatus(
