@@ -1,0 +1,30 @@
+name: Bug report
+description: Report incorrect blocking, missed detection or app problems.
+body:
+  - type: markdown
+    attributes:
+      value: Do not include private messages, usernames, account information or full accessibility dumps. Compatibility is currently experimental.
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Device model, Android version, Instagram version, ReelsGuard version.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Screen/entry route, expected result, actual result. Include navigation mode, orientation and Instagram language.
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Protection mode
+      options: [Complete Blocking, Daily Time Limit, Disabled]
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Optional screenshots with all personal content removed. Never upload credentials or an unredacted screen tree.

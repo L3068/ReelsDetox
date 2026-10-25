@@ -1,0 +1,20 @@
+.gradle/
+.kotlin/
+**/build/
+local.properties
+.idea/
+*.iml
+*.jks
+*.keystore
+keystore.properties
+.env
+.DS_Store
+.agents/
+.codex/
+.aws/
+.superpowers/
+
+# Local implementation planning; not part of the published application.
+docs/IMPLEMENTATION_STATUS.md
+docs/specification.md
+docs/superpowers/
