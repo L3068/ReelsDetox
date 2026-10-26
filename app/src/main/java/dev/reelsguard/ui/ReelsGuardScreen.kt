@@ -6,7 +6,6 @@ import android.content.Intent
 import android.provider.Settings as AndroidSettings
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -17,7 +16,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -25,6 +23,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.repeatOnLifecycle
@@ -40,7 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-private enum class Page { HOME, DISCLOSURE, PERMISSIONS, SETTINGS, PRIVACY, ABOUT }
+private enum class Page { HOME, SETUP, SETTINGS, PRIVACY, ABOUT }
 
 @Composable
 fun ReelsGuardScreen(repository: AppRepository) {
@@ -59,7 +58,8 @@ fun ReelsGuardScreen(repository: AppRepository) {
     }
     val snackbar = remember { SnackbarHostState() }
     var page by rememberSaveable { mutableStateOf(Page.HOME) }
-    var onboardingDismissed by rememberSaveable { mutableStateOf(false) }
+    var informationBackPage by rememberSaveable { mutableStateOf(Page.HOME) }
+    var setupDismissed by rememberSaveable { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     val enabledInAndroid = rememberAccessibilityEnabled()
     val settingsFailure = stringResource(R.string.settings_unavailable)
@@ -79,61 +79,95 @@ fun ReelsGuardScreen(repository: AppRepository) {
             catch (_: java.io.IOException) { snackbar.showSnackbar(saveFailure) }
         }
     }
-    val showOnboarding = state.ready && !state.settings.consent && !onboardingDismissed && page == Page.HOME
-    val scroll = rememberScrollState()
-    LaunchedEffect(page, showOnboarding) { scroll.scrollTo(0) }
-    BackHandler(enabled = page != Page.HOME || showOnboarding) {
-        onboardingDismissed = true
-        page = Page.HOME
+    fun showInformation(target: Page) {
+        informationBackPage = page
+        page = target
     }
-    Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { insets ->
-        Box(Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.TopCenter) {
-            Column(
-                modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
-                    .verticalScroll(scroll).padding(horizontal = 24.dp, vertical = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
-                if (page != Page.HOME) {
-                    TextButton(onClick = { page = Page.HOME }) { Text(stringResource(R.string.back_home)) }
+    fun setupOrOpenAccessibility() {
+        if (state.settings.consent) openAccessibility() else page = Page.SETUP
+    }
+    val showSetup = state.ready && !state.settings.consent && !setupDismissed && page == Page.HOME
+    fun goBack() {
+        when (page) {
+            Page.PRIVACY, Page.ABOUT -> page = informationBackPage
+            Page.HOME -> setupDismissed = true
+            else -> page = Page.HOME
+        }
+    }
+    val scroll = rememberScrollState()
+    LaunchedEffect(page, showSetup) { scroll.scrollTo(0) }
+    BackHandler(enabled = page != Page.HOME || showSetup, onBack = ::goBack)
+    val informationPage = page == Page.PRIVACY || page == Page.ABOUT
+    val setupVisible = showSetup || page == Page.SETUP
+    val settingsLink: (() -> Unit)? = if (page == Page.HOME && !setupVisible && !state.error) {
+        { page = Page.SETTINGS }
+    } else null
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
+        topBar = {
+            Surface {
+                Box(Modifier.fillMaxWidth().statusBarsPadding(), contentAlignment = Alignment.Center) {
+                    Row(
+                        Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (page != Page.HOME) {
+                            TextButton(onClick = ::goBack) { Text(stringResource(R.string.back_home), style = MaterialTheme.typography.bodyLarge) }
+                        } else Brand()
+                    }
                 }
-                Brand()
-                if (state.error) {
-                    InfoCard(R.string.status_storage_error, R.string.storage_error_body)
-                } else if (!state.ready) {
-                    CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
-                    Text(stringResource(R.string.loading))
-                } else if (showOnboarding) {
-                    Onboarding(
-                        onContinue = { page = Page.DISCLOSURE },
-                        onSkip = { onboardingDismissed = true },
-                    )
-                } else when (page) {
-                    Page.HOME -> Dashboard(
-                        settings = state.settings, usedMs = state.usageTodayMs,
-                        service = service, permission = enabledInAndroid, storageError = state.error,
-                        onEnabled = { enabled ->
-                            if (enabled && !state.settings.consent) page = Page.DISCLOSURE
-                            else save { it.copy(enabled = enabled) }
-                        },
-                        onMode = { mode -> save { it.copy(mode = mode) } },
-                        onLimit = { limit -> save { it.copy(dailyLimitMinutes = limit) } },
-                        onCover = { cover -> save { it.copy(hideButton = cover) } },
-                        onSetup = { page = if (state.settings.consent) Page.PERMISSIONS else Page.DISCLOSURE },
-                        onSettings = { page = Page.SETTINGS },
-                        onPrivacy = { page = Page.PRIVACY },
-                        onAbout = { page = Page.ABOUT },
-                    )
-                    Page.DISCLOSURE -> Disclosure(
+            }
+        },
+        bottomBar = {
+            if (!informationPage && (state.ready || state.error)) {
+                Surface {
+                    Column(Modifier.navigationBarsPadding()) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            InformationLinks(
+                                onPrivacy = { showInformation(Page.PRIVACY) },
+                                onAbout = { showInformation(Page.ABOUT) },
+                                onSettings = settingsLink,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+    ) { insets ->
+        BoxWithConstraints(Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.TopCenter) {
+            val bodyHeight = maxHeight
+            Column(
+                modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(scroll)
+                    .heightIn(min = bodyHeight).padding(horizontal = 24.dp, vertical = 20.dp),
+                verticalArrangement = if (setupVisible && !state.error && !informationPage) {
+                    Arrangement.spacedBy(24.dp, Alignment.CenterVertically)
+                } else Arrangement.spacedBy(20.dp),
+            ) {
+                when {
+                    page == Page.PRIVACY -> InformationPage(R.string.privacy_title, listOf(
+                        R.string.privacy_local, R.string.privacy_content, R.string.privacy_permissions, R.string.privacy_control,
+                    ))
+                    page == Page.ABOUT -> InformationPage(R.string.about_title, listOf(
+                        R.string.about_description, R.string.about_license, R.string.limitations, R.string.about_independent,
+                    ))
+                    state.error -> InfoCard(R.string.status_storage_error, R.string.storage_error_body)
+                    !state.ready -> {
+                        CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+                        Text(stringResource(R.string.loading))
+                    }
+                    setupVisible -> QuickSetup(
                         busy = busy,
                         onAccept = {
                             busy = true
                             scope.launch {
                                 try {
-                                    repository.acceptConsent()
-                                    // Persistence must succeed before Android's settings are opened.
-                                    if (repository.state.value.settings.consent) {
-                                        onboardingDismissed = true
-                                        page = Page.PERMISSIONS
+                                    repository.updateSettings { it.copy(consent = true, enabled = true) }
+                                    // Persist consent and activation together before opening Android settings.
+                                    val saved = repository.state.value
+                                    if (saved.ready && !saved.error && saved.settings.consent && saved.settings.enabled) {
+                                        setupDismissed = true
+                                        page = Page.HOME
                                         openAccessibility()
                                     } else snackbar.showSnackbar(saveFailure)
                                 } catch (_: java.io.IOException) {
@@ -141,35 +175,34 @@ fun ReelsGuardScreen(repository: AppRepository) {
                                 } finally { busy = false }
                             }
                         },
-                        onDecline = { onboardingDismissed = true; page = Page.HOME },
+                        onDecline = { setupDismissed = true; page = Page.HOME },
                     )
-                    Page.PERMISSIONS -> PermissionSetup(
-                        consent = state.settings.consent, permission = enabledInAndroid, connected = service.connected,
-                        onOpen = { if (state.settings.consent) openAccessibility() else page = Page.DISCLOSURE },
-                    )
-                    Page.SETTINGS -> SettingsPage(
+                    page == Page.SETTINGS -> SettingsPage(
                         settings = state.settings,
-                        onCover = { cover -> save { it.copy(hideButton = cover) } },
-                        onPermission = { page = if (state.settings.consent) Page.PERMISSIONS else Page.DISCLOSURE },
-                        onPrivacy = { page = Page.PRIVACY },
+                        onPermission = ::setupOrOpenAccessibility,
                         onRevoke = {
                             scope.launch {
                                 try {
                                     repository.revokeConsent()
-                                    onboardingDismissed = true
+                                    setupDismissed = true
                                     page = Page.HOME
                                 } catch (_: java.io.IOException) { snackbar.showSnackbar(saveFailure) }
                             }
                         },
                     )
-                    Page.PRIVACY -> InformationPage(R.string.privacy_title, listOf(
-                        R.string.privacy_local, R.string.privacy_content, R.string.privacy_permissions, R.string.privacy_control,
-                    ))
-                    Page.ABOUT -> InformationPage(R.string.about_title, listOf(
-                        R.string.about_description, R.string.about_license, R.string.limitations, R.string.about_independent,
-                    ))
+                    else -> Dashboard(
+                        settings = state.settings, usedMs = state.usageTodayMs,
+                        service = service, permission = enabledInAndroid, storageError = state.error,
+                        onEnabled = { enabled ->
+                            if (enabled && !state.settings.consent) page = Page.SETUP
+                            else save { it.copy(enabled = enabled) }
+                        },
+                        onMode = { mode -> save { it.copy(mode = mode) } },
+                        onLimit = { limit -> save { it.copy(dailyLimitMinutes = limit) } },
+                        onCover = { cover -> save { it.copy(hideButton = cover) } },
+                        onSetup = ::setupOrOpenAccessibility,
+                    )
                 }
-                Spacer(Modifier.height(8.dp))
             }
         }
     }
@@ -204,50 +237,32 @@ private fun rememberAccessibilityEnabled(): Boolean {
 
 @Composable
 private fun Brand() {
-    val color = MaterialTheme.colorScheme.primary
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Canvas(Modifier.size(42.dp)) {
-            drawPath(Path().apply {
-                moveTo(size.width * .5f, 0f)
-                lineTo(size.width * .92f, size.height * .17f)
-                lineTo(size.width * .86f, size.height * .66f)
-                quadraticTo(size.width * .7f, size.height * .88f, size.width * .5f, size.height)
-                quadraticTo(size.width * .3f, size.height * .88f, size.width * .14f, size.height * .66f)
-                lineTo(size.width * .08f, size.height * .17f)
-                close()
-            }, color)
-        }
-        Column {
-            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(stringResource(R.string.brand_tagline), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(R.drawable.ic_launcher),
+            contentDescription = null,
+            modifier = Modifier.size(44.dp),
+        )
+        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
-private fun Onboarding(onContinue: () -> Unit, onSkip: () -> Unit) {
-    Text(stringResource(R.string.welcome_title), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-    Text(stringResource(R.string.welcome_body), style = MaterialTheme.typography.bodyLarge)
-    InfoCard(R.string.onboarding_modes, R.string.onboarding_modes_body)
-    InfoCard(R.string.onboarding_private, R.string.onboarding_private_body)
-    Text(stringResource(R.string.limitations), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.review_access)) }
-    TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.not_now)) }
-}
-
-@Composable
-private fun Disclosure(busy: Boolean, onAccept: () -> Unit, onDecline: () -> Unit) {
-    Text(stringResource(R.string.disclosure_title), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-    Text(stringResource(R.string.disclosure_intro), style = MaterialTheme.typography.bodyLarge)
-    InfoCard(R.string.disclosure_reads_title, R.string.disclosure_reads_body)
-    InfoCard(R.string.disclosure_action_title, R.string.disclosure_action_body)
-    InfoCard(R.string.disclosure_data_title, R.string.disclosure_data_body)
-    Text(stringResource(R.string.disclosure_choice))
-    Button(onClick = onAccept, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.agree_open_settings))
+private fun QuickSetup(busy: Boolean, onAccept: () -> Unit, onDecline: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(stringResource(R.string.disclosure_title), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.permission_instructions), style = MaterialTheme.typography.bodyLarge)
     }
-    TextButton(onClick = onDecline, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.decline))
+    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(24.dp)) {
+        Text(stringResource(R.string.disclosure_intro), Modifier.padding(24.dp), style = MaterialTheme.typography.bodyLarge)
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = onAccept, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+            Text(stringResource(R.string.agree_open_settings), style = MaterialTheme.typography.bodyLarge)
+        }
+        TextButton(onClick = onDecline, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.decline), style = MaterialTheme.typography.bodyLarge)
+        }
     }
 }
 
@@ -255,78 +270,68 @@ private fun Disclosure(busy: Boolean, onAccept: () -> Unit, onDecline: () -> Uni
 private fun Dashboard(
     settings: Settings, usedMs: Long, service: ServiceStatus, permission: Boolean, storageError: Boolean,
     onEnabled: (Boolean) -> Unit, onMode: (Mode) -> Unit, onLimit: (Int) -> Unit, onCover: (Boolean) -> Unit,
-    onSetup: () -> Unit, onSettings: () -> Unit, onPrivacy: () -> Unit, onAbout: () -> Unit,
+    onSetup: () -> Unit,
 ) {
-    Text(stringResource(R.string.dashboard_title), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
     val status = when {
         storageError || service.storageError -> R.string.status_storage_error
         !settings.enabled || !settings.consent -> R.string.status_off
         !permission -> R.string.status_permission_needed
         !service.connected -> R.string.status_disconnected
+        service.overlayError -> R.string.status_overlay_error
         service.navigationFailed -> R.string.status_navigation_failed
         service.detection == "paused" -> R.string.status_paused
         else -> R.string.status_ready
     }
-    val healthy = settings.enabled && settings.consent && permission && service.connected && !storageError && !service.storageError && !service.navigationFailed && service.detection != "paused"
-    Card(colors = CardDefaults.cardColors(containerColor = if (healthy) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh), shape = RoundedCornerShape(28.dp)) {
-        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(status), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(stringResource(if (healthy) R.string.status_ready_body else R.string.status_inactive_body))
-            SwitchRow(stringResource(R.string.protection), stringResource(R.string.protection_description), settings.enabled, onEnabled)
+    val protectionLabel = stringResource(R.string.protection)
+    val healthy = settings.enabled && settings.consent && permission && service.connected && !storageError && !service.storageError && !service.overlayError && !service.navigationFailed && service.detection != "paused"
+    Card(colors = CardDefaults.cardColors(containerColor = if (healthy) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh), shape = RoundedCornerShape(24.dp)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(stringResource(R.string.protection), style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(status), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                }
+                Switch(checked = settings.enabled, onCheckedChange = onEnabled, modifier = Modifier.semantics { contentDescription = protectionLabel })
+            }
+            if (service.storageError) Text(stringResource(R.string.storage_error_body), style = MaterialTheme.typography.bodyLarge)
         }
     }
-    Text(stringResource(R.string.mode_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-    ModeOption(Mode.BLOCK_ALL, settings.mode, R.string.mode_block, R.string.mode_block_body, onMode)
-    ModeOption(Mode.DAILY_LIMIT, settings.mode, R.string.mode_limit, R.string.mode_limit_body, onMode)
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ModeOption(Mode.BLOCK_ALL, settings.mode, R.string.mode_block, onMode)
+        ModeOption(Mode.DAILY_LIMIT, settings.mode, R.string.mode_limit, onMode)
+    }
     if (settings.mode == Mode.DAILY_LIMIT) {
         LimitCard(settings.dailyLimitMinutes, usedMs, onLimit)
     } else {
-        Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(20.dp)) {
-            Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(stringResource(R.string.used_today))
-                Text(duration(usedMs), fontWeight = FontWeight.Bold)
+        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(24.dp)) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(horizontal = 24.dp, vertical = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.used_today), style = MaterialTheme.typography.bodyLarge)
+                Text(duration(usedMs), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             }
         }
     }
-    Card(shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(20.dp)) {
-            SwitchRow(stringResource(R.string.cover_title), stringResource(R.string.cover_description), settings.hideButton, onCover)
+    Card(shape = RoundedCornerShape(24.dp)) {
+        Column(Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
+            SwitchRow(stringResource(R.string.cover_title), settings.hideButton, onCover)
         }
     }
-    Card(shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(stringResource(R.string.accessibility_title), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(when {
-                !settings.consent -> R.string.permission_no_consent
-                !permission -> R.string.permission_off
-                !service.connected -> R.string.permission_waiting
-                else -> R.string.permission_connected
-            }))
-            OutlinedButton(onClick = onSetup) { Text(stringResource(R.string.permission_setup)) }
-        }
+    OutlinedButton(onClick = onSetup, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+        Text(stringResource(R.string.open_accessibility), style = MaterialTheme.typography.bodyLarge)
     }
-    Text(stringResource(R.string.limitations), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        TextButton(onClick = onSettings) { Text(stringResource(R.string.settings_title)) }
-        TextButton(onClick = onPrivacy) { Text(stringResource(R.string.privacy_title)) }
-        TextButton(onClick = onAbout) { Text(stringResource(R.string.about_title)) }
-    }
+    Text(stringResource(R.string.language_limitations), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
-private fun ModeOption(mode: Mode, selected: Mode, title: Int, body: Int, onMode: (Mode) -> Unit) {
+private fun ModeOption(mode: Mode, selected: Mode, title: Int, onMode: (Mode) -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().selectable(selected = mode == selected, role = Role.RadioButton, onClick = { onMode(mode) }),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(24.dp),
         color = if (mode == selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
     ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.heightIn(min = 72.dp).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             RadioButton(selected = mode == selected, onClick = null)
             Spacer(Modifier.width(12.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(stringResource(title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(stringResource(body), style = MaterialTheme.typography.bodyMedium)
-            }
+            Text(stringResource(title), style = MaterialTheme.typography.titleMedium, fontSize = 18.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
@@ -337,11 +342,13 @@ private fun LimitCard(limit: Int, usedMs: Long, onLimit: (Int) -> Unit) {
     val limitMs = limit * 60_000L
     val label = stringResource(R.string.daily_allowance)
     Card(shape = RoundedCornerShape(24.dp)) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(label, style = MaterialTheme.typography.titleMedium)
-            Text(androidx.compose.ui.res.pluralStringResource(R.plurals.minutes_value, draft.roundToInt(), draft.roundToInt()), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Text(androidx.compose.ui.res.pluralStringResource(R.plurals.minutes_value, draft.roundToInt(), draft.roundToInt()), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
             Slider(
-                value = draft, onValueChange = { draft = it }, valueRange = 1f..120f, steps = 118,
+                value = draft, onValueChange = { draft = it.roundToInt().toFloat() }, valueRange = 1f..120f,
                 onValueChangeFinished = { onLimit(draft.roundToInt()) },
                 modifier = Modifier.semantics { contentDescription = label },
             )
@@ -350,7 +357,7 @@ private fun LimitCard(limit: Int, usedMs: Long, onLimit: (Int) -> Unit) {
                 Metric(R.string.used_today, duration(usedMs), Modifier.weight(1f))
                 Metric(R.string.remaining, duration((limitMs - usedMs).coerceAtLeast(0L)), Modifier.weight(1f))
             }
-            Text(stringResource(R.string.reset_midnight), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.reset_midnight), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -358,8 +365,8 @@ private fun LimitCard(limit: Int, usedMs: Long, onLimit: (Int) -> Unit) {
 @Composable
 private fun Metric(label: Int, value: String, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(stringResource(label), style = MaterialTheme.typography.labelMedium)
-        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(stringResource(label), style = MaterialTheme.typography.bodyLarge)
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -370,27 +377,13 @@ private fun duration(milliseconds: Long): String {
 }
 
 @Composable
-private fun PermissionSetup(consent: Boolean, permission: Boolean, connected: Boolean, onOpen: () -> Unit) {
-    Text(stringResource(R.string.permission_setup), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-    Text(stringResource(when { !consent -> R.string.permission_no_consent; !permission -> R.string.permission_off; !connected -> R.string.permission_waiting; else -> R.string.permission_connected }))
-    Text(stringResource(R.string.permission_instructions))
-    InfoCard(R.string.overlay_title, R.string.overlay_body)
-    Button(onClick = onOpen, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.open_accessibility)) }
-    Text(stringResource(R.string.permission_troubleshooting), style = MaterialTheme.typography.bodyMedium)
-}
-
-@Composable
-private fun SettingsPage(settings: Settings, onCover: (Boolean) -> Unit, onPermission: () -> Unit, onPrivacy: () -> Unit, onRevoke: () -> Unit) {
+private fun SettingsPage(settings: Settings, onPermission: () -> Unit, onRevoke: () -> Unit) {
     var showRevoke by rememberSaveable { mutableStateOf(false) }
     Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-    Card(shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(20.dp)) {
-            SwitchRow(stringResource(R.string.cover_title), stringResource(R.string.cover_description), settings.hideButton, onCover)
-        }
-    }
     Text(stringResource(R.string.appearance_system), color = MaterialTheme.colorScheme.onSurfaceVariant)
-    OutlinedButton(onClick = onPermission, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.permission_setup)) }
-    OutlinedButton(onClick = onPrivacy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.privacy_title)) }
+    InfoCard(R.string.instagram_languages_title, R.string.instagram_languages)
+    Text(stringResource(R.string.language_limitations), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    OutlinedButton(onClick = onPermission, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) { Text(stringResource(R.string.open_accessibility), style = MaterialTheme.typography.bodyLarge) }
     if (settings.consent) {
         TextButton(onClick = { showRevoke = true }) { Text(stringResource(R.string.revoke_consent), color = MaterialTheme.colorScheme.error) }
     }
@@ -405,23 +398,34 @@ private fun SettingsPage(settings: Settings, onCover: (Boolean) -> Unit, onPermi
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SwitchRow(title: String, description: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
+private fun InformationLinks(onPrivacy: () -> Unit, onAbout: () -> Unit, onSettings: (() -> Unit)? = null) {
+    FlowRow(
+        Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (onSettings != null) TextButton(onClick = onSettings) { Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.bodyLarge) }
+        TextButton(onClick = onPrivacy) { Text(stringResource(R.string.privacy_title), style = MaterialTheme.typography.bodyLarge) }
+        TextButton(onClick = onAbout) { Text(stringResource(R.string.about_title), style = MaterialTheme.typography.bodyLarge) }
+    }
+}
+
+@Composable
+private fun SwitchRow(title: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(description, style = MaterialTheme.typography.bodySmall)
-        }
+        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontSize = 18.sp)
         Switch(checked = checked, onCheckedChange = onChecked, modifier = Modifier.semantics { contentDescription = title })
     }
 }
 
 @Composable
 private fun InfoCard(title: Int, body: Int) {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(24.dp)) {
+        Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(stringResource(body), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(body), style = MaterialTheme.typography.bodyLarge)
         }
     }
 }

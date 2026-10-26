@@ -9,6 +9,7 @@ data class ServiceStatus(
     val detection: String = "idle",
     val overlayVisible: Boolean = false,
     val navigationFailed: Boolean = false,
+    val overlayError: Boolean = false,
 )
 
 /** In-process liveness; never persisted, so a dead service cannot leave a green status. */

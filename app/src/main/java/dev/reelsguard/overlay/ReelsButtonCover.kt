@@ -11,7 +11,7 @@ import android.widget.TextView
 import dev.reelsguard.core.Bounds
 
 /** A visible, touch-consuming cover; Instagram's actual navigation button is not removed. */
-internal class ReelsButtonCover(private val service: AccessibilityService) {
+internal class ReelsButtonCover(private val service: AccessibilityService, private val viewerGuard: Boolean = false) {
     private val manager = service.getSystemService(WindowManager::class.java)
     private var view: View? = null
     private var current: Bounds? = null
@@ -37,7 +37,9 @@ internal class ReelsButtonCover(private val service: AccessibilityService) {
             }
         }
         val cover = TextView(service).apply {
-            text = ""
+            text = if (viewerGuard) service.getString(dev.reelsguard.R.string.viewer_blocked_message) else ""
+            setTextColor(Color.WHITE)
+            textSize = 20f
             gravity = Gravity.CENTER
             contentDescription = service.getString(dev.reelsguard.R.string.reels_blocked)
             background = GradientDrawable().apply {

@@ -1,6 +1,6 @@
 # Security
 
-ReelsGuard 0.1 is an experimental tester build. No security audit or universal Instagram compatibility is claimed.
+ReelsDetox 0.1 is an experimental tester build. No security audit or universal Instagram compatibility is claimed.
 
 Report security problems privately through the repository's **Security → Report a vulnerability** when available. If private reporting is unavailable, open an issue requesting a private contact without publishing exploit details or private data. Never attach credentials, screen contents or unredacted device logs.
 

@@ -39,10 +39,14 @@ class ReelsAccessibilityService : AccessibilityService() {
     private val repository get() = (application as ReelsGuardApp).repository
     private lateinit var reader: InstagramSnapshot
     private lateinit var cover: ReelsButtonCover
+    private lateinit var guard: ReelsButtonCover
+    private lateinit var checkpoints: UsageCheckpoints
+    private lateinit var entryProbes: EntryProbes
+    private var instagramWasForeground = false
     private val classifier = CandidateInstagramClassifier()
-    private val back = BackGate()
+    private val back = BackGate(cooldownMillis = 250)
     private var tracker: UsageTracker? = null
-    private var lastSaved: UsageState? = null
+    private var lastQueued: UsageState? = null
     private var lastSaveAt = 0L
     private var wasViewing = false
     private var ticker: Job? = null
@@ -50,11 +54,12 @@ class ReelsAccessibilityService : AccessibilityService() {
     private var connected = false
     private var receiverRegistered = false
     private var navigationFailed = false
-    private var checkpointInFlight = false
+    private var tickInterval = 0L
+    private var diagnostics = "not_scanned"
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == Intent.ACTION_SCREEN_OFF) cover.hide()
+            if (intent?.action == Intent.ACTION_SCREEN_OFF) { clearOverlays(); entryProbes.stop() }
             signal()
         }
     }
@@ -64,6 +69,20 @@ class ReelsAccessibilityService : AccessibilityService() {
         connected = true
         reader = InstagramSnapshot(this)
         cover = ReelsButtonCover(this)
+        guard = ReelsButtonCover(this, viewerGuard = true)
+        checkpoints = UsageCheckpoints(scope, repository::saveUsage) { clearOverlays(); stopTicker(); signal() }
+        entryProbes = EntryProbes(scope, {
+            val app = repository.state.value
+            connected && app.ready && !app.error && !checkpoints.isFailed &&
+                app.settings.enabled && app.settings.consent
+        }, {
+            val app = repository.state.value
+            val blocking = ProtectionPolicy.shouldBlock(app.settings, tracker?.usedTodayMillis ?: app.usageTodayMs)
+            val detection = RuntimeState.status.value.detection
+            cover.visible || guard.visible ||
+                (!blocking && detection == "reels") ||
+                ((!blocking || !app.settings.hideButton) && detection == "other")
+        }, { signal() })
         RuntimeState.publish(ServiceStatus(connected = true))
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON)
@@ -76,18 +95,21 @@ class ReelsAccessibilityService : AccessibilityService() {
         scope.launch {
             repository.state.map { Triple(it.settings, it.ready, it.error) }.distinctUntilChanged().collect {
                 // User's disable/revoke takes effect before any suspended persistence operation resumes.
-                if (!it.first.hideButton || !it.second || it.third ||
+                if (!it.first.hideButton) cover.hide()
+                if (!it.second || it.third ||
                     !ProtectionPolicy.shouldBlock(it.first, tracker?.usedTodayMillis ?: repository.state.value.usageTodayMs)) {
-                    cover.hide()
+                    clearOverlays()
                 }
+                if (reader.instagramActive() == true) entryProbes.start()
                 signal()
             }
         }
         scope.launch {
             for (ignored in signals) {
                 try { evaluate() }
-                catch (_: RuntimeException) {
-                    cover.hide(); stopTicker()
+                catch (failure: RuntimeException) {
+                    diagnostics = "scan_failed=${failure.javaClass.simpleName}; " + failure.stackTrace.take(8).joinToString { "${it.className}.${it.methodName}:${it.lineNumber}" }
+                    clearOverlays(); stopTicker()
                     pauseAndPersist()
                     RuntimeState.publish(ServiceStatus(connected = true, detection = "unknown"))
                 }
@@ -100,32 +122,34 @@ class ReelsAccessibilityService : AccessibilityService() {
         if (!connected || event == null) return
         // Overlay's own accessibility events must not create an add/remove feedback loop.
         if (event.packageName?.toString() == packageName && reader.foreground()) return
+        val active = reader.instagramActive()
+        val entered = active == true && !instagramWasForeground
+        if (active != null) instagramWasForeground = active
         val foreground = reader.foreground()
-        val mayInvalidateBounds = event.packageName?.toString() == INSTAGRAM ||
-            event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
-            event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-        if (!foreground || (checkpointInFlight && mayInvalidateBounds)) cover.hide()
+        if (!foreground) clearOverlays()
+        if (active == false) entryProbes.stop()
+        if (entered || (event.packageName?.toString() == INSTAGRAM &&
+                event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)) entryProbes.start()
         // Content events from background apps are ignored; metadata-only window events are needed
         // across all packages to promptly remove covers on app/system-window transitions.
         if (event.packageName?.toString() != INSTAGRAM && foreground &&
             event.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        // During a checkpoint the actor cannot inspect new geometry yet: remove the old touch
-        // target synchronously. Otherwise the serialized evaluation updates valid bounds in place.
+        // The actor never awaits disk I/O; fresh bounds are applied in the next main-thread turn.
         signal()
     }
 
     private fun signal() { revision++; signals.trySend(Unit) }
 
-    private suspend fun evaluate() {
+    private fun evaluate() {
         val observedRevision = revision
         val app = repository.state.value
-        if (!app.ready || app.error) {
-            cover.hide(); stopTicker(); pauseAndPersist()
-            RuntimeState.publish(ServiceStatus(connected = true, storageError = app.error, detection = "paused"))
+        if (!app.ready || app.error || checkpoints.isFailed) {
+            clearOverlays(); stopTicker(); pauseAndPersist()
+            RuntimeState.publish(ServiceStatus(connected = true, storageError = app.error || checkpoints.isFailed, detection = "paused"))
             return
         }
-        val timing = tracker ?: UsageTracker(app.usage).also { tracker = it; lastSaved = app.usage }
+        val timing = tracker ?: UsageTracker(app.usage).also { tracker = it; lastQueued = app.usage }
         val settings = app.settings
         val authorized = settings.enabled && settings.consent
         val screen = if (authorized) reader.read() else null
@@ -135,78 +159,76 @@ class ReelsAccessibilityService : AccessibilityService() {
         val now = SystemClock.elapsedRealtime()
         val usage = timing.update(viewing, now, Instant.now(), ZoneId.systemDefault(), bootCount())
         val blocking = ProtectionPolicy.shouldBlock(settings, timing.usedTodayMillis)
-        // Refresh valid bounds before disk I/O, using the same guarded snapshot as detection.
-        // In-place layout updates avoid flicker without retaining a touch target on unknown UI.
         val bounds = screen?.let { OverlayPolicy.candidate(it, settings, blocking) }
-        if (bounds != null && reader.foreground()) cover.show(bounds) else cover.hide()
-        if (usage != lastSaved && (viewing != wasViewing || usage.days != lastSaved?.days ||
-                (viewing && now - lastSaveAt >= 1_000))) {
-            val saved = try {
-                checkpointInFlight = true
-                repository.saveUsage(usage)
-            } finally {
-                checkpointInFlight = false
-            }
-            if (!saved) {
-                cover.hide(); stopTicker()
-                timing.update(false, SystemClock.elapsedRealtime(), Instant.now(), ZoneId.systemDefault(), bootCount())
-                wasViewing = false
-                RuntimeState.publish(ServiceStatus(connected = true, storageError = true, detection = "paused"))
-                return
-            }
-            lastSaved = usage; lastSaveAt = now
-        }
-        wasViewing = viewing
-        // No global action or overlay may use a snapshot made stale while DataStore suspended.
+        val guardBounds = screen?.let { OverlayPolicy.viewerGuard(it, settings, blocking) }
+        if (authorized && foreground && reader.foreground()) {
+            if (bounds != null) cover.show(bounds) else cover.hide()
+            if (guardBounds != null) guard.show(guardBounds) else guard.hide()
+        } else clearOverlays()
+        diagnostics = "classification=$classification; window=${reader.windowState}; app=${screen?.appBounds}; " +
+            "safe=${screen?.safeBounds}; complete=${screen?.complete}; nav=$bounds; guard=$guardBounds; " +
+            "coverVisible=${cover.visible}; guardVisible=${guard.visible}"
+        // Navigation and visual blocking happen before checkpointing, on fresh foreground evidence.
         if (observedRevision != revision || !connected) return
         if (!authorized || !foreground || !reader.foreground()) {
-            cover.hide(); stopTicker()
+            clearOverlays(); stopTicker()
             back.observe(Classification.UNKNOWN, reader.instagramActive() != false, false, now)
             navigationFailed = false
-            RuntimeState.publish(ServiceStatus(connected = true, detection = "idle"))
-            return
-        }
-        if (back.observe(classification, true, blocking, now)) {
-            cover.hide()
+        } else if (back.observe(classification, true, blocking, now)) {
             navigationFailed = !performGlobalAction(GLOBAL_ACTION_BACK)
         } else if (blocking && classification == Classification.REELS && back.retryBudgetExhausted(now)) {
-            // Accepted Back is not proof of exit; report a viewer still open after both attempts.
             navigationFailed = true
         }
         if (!blocking || classification == Classification.OTHER) navigationFailed = false
+        val overlayError = (bounds != null && !cover.visible) || (guardBounds != null && !guard.visible)
+        if (usage != lastQueued && (viewing != wasViewing || usage.days != lastQueued?.days ||
+                (viewing && now - lastSaveAt >= 1_000))) {
+            if (checkpoints.offer(usage)) { lastQueued = usage; lastSaveAt = now }
+        }
+        wasViewing = viewing
         RuntimeState.publish(ServiceStatus(
             connected = true,
             detection = classification.name.lowercase(),
-            overlayVisible = cover.visible,
+            overlayVisible = cover.visible || guard.visible,
             navigationFailed = navigationFailed,
+            overlayError = overlayError,
         ))
-        // No idle/background polling. A one-second tick is needed for an unmoving Reels viewer
-        // to hit the time limit, checkpoint usage, and validate a currently visible cover.
-        if (viewing || cover.visible) startTicker() else stopTicker()
+        // Brief fast verification while Back completes; normal viewing/checkpoints use 1 Hz.
+        if (viewing || cover.visible || guard.visible) {
+            startTicker(if (viewing && blocking && !back.retryBudgetExhausted(now)) 150L else 1_000L)
+        } else stopTicker()
     }
 
-    private fun startTicker() {
-        if (ticker?.isActive == true) return
-        ticker = scope.launch { while (true) { delay(1_000); signal() } }
+    private fun startTicker(interval: Long) {
+        if (ticker?.isActive == true && tickInterval == interval) return
+        ticker?.cancel()
+        tickInterval = interval
+        ticker = scope.launch { while (true) { delay(interval); signal() } }
     }
     private fun stopTicker() { ticker?.cancel(); ticker = null }
 
-    private suspend fun pauseAndPersist() {
+    private fun pauseAndPersist() {
         val usage = tracker?.update(false, SystemClock.elapsedRealtime(), Instant.now(), ZoneId.systemDefault(), bootCount()) ?: return
         wasViewing = false
-        if (usage != lastSaved && repository.state.value.ready && repository.saveUsage(usage)) lastSaved = usage
+        if (usage != lastQueued && repository.state.value.ready && checkpoints.offer(usage)) lastQueued = usage
+    }
+
+    private fun clearOverlays() { cover.hide(); guard.hide() }
+
+    override fun dump(fd: java.io.FileDescriptor, writer: java.io.PrintWriter, args: Array<out String>) {
+        if (dev.reelsguard.BuildConfig.DEBUG) writer.println("ReelsGuard: $diagnostics")
     }
 
     override fun onInterrupt() {
         if (!connected) return
-        cover.hide(); stopTicker()
-        scope.launch { pauseAndPersist() }
+        clearOverlays(); stopTicker(); entryProbes.stop()
+        pauseAndPersist()
         RuntimeState.publish(ServiceStatus(connected = true, detection = "paused"))
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (connected) { cover.hide(); signal() }
+        if (connected) { clearOverlays(); signal() }
     }
 
     override fun onUnbind(intent: Intent?): Boolean { cleanup(); return super.onUnbind(intent) }
@@ -215,7 +237,7 @@ class ReelsAccessibilityService : AccessibilityService() {
     private fun cleanup() {
         if (!connected) return
         connected = false
-        cover.hide(); stopTicker()
+        clearOverlays(); stopTicker(); entryProbes.stop()
         tracker?.update(false, SystemClock.elapsedRealtime(), Instant.now(), ZoneId.systemDefault(), bootCount())?.let {
             (application as ReelsGuardApp).checkpoint(it)
         }

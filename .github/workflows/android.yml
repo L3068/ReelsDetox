@@ -32,7 +32,7 @@ jobs:
       - name: Upload tester APK
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: ReelsGuard-debug-${{ github.sha }}
+          name: ReelsDetox-debug-${{ github.sha }}
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
@@ -43,5 +43,6 @@ jobs:
           name: verification-reports
           path: |
             core/build/reports/tests/
+            app/build/reports/tests/
             app/build/reports/lint-results-debug.*
           if-no-files-found: warn

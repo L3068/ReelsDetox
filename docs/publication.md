@@ -1,13 +1,13 @@
 # Publication
 
-Public repository: [L3068/ReelsGuard](https://github.com/L3068/ReelsGuard). To publish a local clone if no remote exists:
+Public repository: [L3068/ReelsDetox](https://github.com/L3068/ReelsDetox). To publish a local clone if no remote exists:
 
 ```sh
 gh auth login
 git init -b main
 git add .
-git commit -m "Build experimental ReelsGuard Android MVP"
-gh repo create ReelsGuard --public --source=. --remote=origin --push
+git commit -m "Build experimental ReelsDetox Android MVP"
+gh repo create ReelsDetox --public --source=. --remote=origin --push
 ```
 
 Inspect `git diff --cached` before committing. `.gitignore` excludes SDK paths, generated builds, IDE caches and signing material. Keep the Gradle wrapper JAR tracked.

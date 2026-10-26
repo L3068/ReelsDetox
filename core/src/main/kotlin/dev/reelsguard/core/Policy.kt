@@ -16,7 +16,6 @@ object OverlayPolicy {
             snapshot.packageName != InstagramCandidates.PACKAGE_NAME || !snapshot.complete ||
             !snapshot.appBounds.contains(snapshot.safeBounds)) return null
         val candidates = snapshot.nodes.filter { it.visible && it.clickable &&
-            it.label == UiLabel.REELS &&
             it.viewId in InstagramCandidates.navigationIds }
         if (candidates.size != 1) return null
         val bounds = candidates.single().bounds
@@ -27,6 +26,20 @@ object OverlayPolicy {
                 it.width >= safe.width / 30 && it.height >= safe.height / 100 &&
                 it.top >= safe.top + safe.height * 3 / 4
         }
+    }
+
+    /** Prevent watching/tapping a confirmed blocked viewer while Back completes or is rejected. */
+    fun viewerGuard(snapshot: ScreenSnapshot, settings: Settings, blocked: Boolean): Bounds? {
+        if (!blocked || !settings.enabled || !settings.consent ||
+            CandidateInstagramClassifier().classify(snapshot) != Classification.REELS) return null
+        val viewer = snapshot.nodes.filter { it.visible && it.viewId in InstagramCandidates.viewerIds &&
+            snapshot.appBounds.contains(it.bounds) && it.bounds.width >= snapshot.appBounds.width / 2 &&
+            it.bounds.height >= snapshot.appBounds.height / 2 }
+            .maxByOrNull { it.bounds.height }?.bounds ?: return null
+        val safe = snapshot.safeBounds
+        return Bounds(maxOf(viewer.left, safe.left), maxOf(viewer.top, safe.top),
+            minOf(viewer.right, safe.right), minOf(viewer.bottom, safe.bottom))
+            .takeIf { snapshot.appBounds.contains(it) && safe.contains(it) }
     }
 }
 
@@ -43,6 +56,7 @@ class BackGate(private val cooldownMillis: Long = 1500) {
     fun observe(classification: Classification, instagramForeground: Boolean, shouldBlock: Boolean, elapsedMillis: Long): Boolean {
         if (!instagramForeground || classification == Classification.OTHER) {
             attempts = 0
+            lastAttempt = null
             return false
         }
         if (!shouldBlock || classification != Classification.REELS || attempts >= 2) return false

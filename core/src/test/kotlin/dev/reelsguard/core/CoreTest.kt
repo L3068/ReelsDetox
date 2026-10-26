@@ -99,13 +99,13 @@ class CoreTest {
         assertTrue(gate.observe(Classification.REELS, true, true, 8000))
     }
 
-    @Test fun `cooldown covers separate viewer episodes and rule toggles`() {
+    @Test fun `cooldown applies within viewer episodes and rule toggles`() {
         val gate = BackGate(cooldownMillis = 1500)
         assertTrue(gate.observe(Classification.REELS, true, true, 0))
         gate.observe(Classification.REELS, true, false, 100)
         assertTrue(gate.observe(Classification.REELS, true, true, 2000))
         gate.observe(Classification.OTHER, true, true, 2100)
-        assertFalse(gate.observe(Classification.REELS, true, true, 2200))
+        assertTrue(gate.observe(Classification.REELS, true, true, 2200))
         gate.observe(Classification.OTHER, true, true, 2300)
         assertTrue(gate.observe(Classification.REELS, true, true, 4000))
     }

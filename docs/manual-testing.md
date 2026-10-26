@@ -1,8 +1,8 @@
 # Manual acceptance matrix
 
-**Current Instagram compatibility: not verified on a physical device.** Check boxes are deliberately empty until evidence exists. Never mark a row from unit-test or APK-build success.
+**Limited physical evidence exists for Pixel 8 / Android 17 / Instagram 452.1.0.53.64 lower-tab entry.** See feasibility.md. Remaining boxes describe the broader acceptance matrix and must not be marked from that smoke test alone. Never mark a row from unit-test or APK-build success.
 
-Record date, ReelsGuard commit, phone model, Android build/API, Instagram version, language, navigation mode and orientation. Use a dedicated test account without sensitive messages. Share only sanitized findings, never full screen trees.
+Record date, ReelsDetox commit, phone model, Android build/API, Instagram version, language, navigation mode and orientation. Use a dedicated test account without sensitive messages. Share only sanitized findings, never full screen trees.
 
 ## Entry routes and false positives
 
@@ -14,7 +14,7 @@ For both Complete Blocking and Daily Limit (before and after exhaustion):
 - [ ] Open/read/write DM and shared-Reel preview: no Back or timing before viewer opens.
 - [ ] Stories and Story replies: never classified as Reels (Instagram's internal `reel` naming can refer to Stories).
 - [ ] Unknown/incomplete/hidden node trees: no navigation, no coverage and no timing.
-- [ ] Rejected Back or unchanged viewer: at most two attempts per episode; no unbounded Back loop; status reports rejection or a viewer still open after the retry cooldown.
+- [ ] Rejected Back or unchanged viewer: at most two attempts per episode; no unbounded Back loop; status reports rejection or a viewer still open after the retry cooldown; the confirmed viewer stays visually covered.
 - [ ] Reel with comments/share sheet/keyboard: fail open while ambiguous; ordinary interactions remain available.
 
 ## Covers
@@ -49,4 +49,4 @@ For both Complete Blocking and Daily Limit (before and after exhaustion):
 - [ ] Merged app manifest has no INTERNET, usage access, media projection, overlay runtime, storage or notification permissions.
 - [ ] Logs and DataStore contain no private screen content.
 
-An emulator test of ReelsGuard itself does not check any Instagram row above. Promote an adapter from candidate to supported only after recording real-device evidence for every relevant entry route and false-positive row.
+An emulator test of ReelsDetox itself does not check any Instagram row above. Promote an adapter from candidate to supported only after recording real-device evidence for every relevant entry route and false-positive row.

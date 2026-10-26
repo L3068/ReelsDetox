@@ -8,7 +8,7 @@ body:
     id: versions
     attributes:
       label: Versions
-      description: Device model, Android version, Instagram version, ReelsGuard version.
+      description: Device model, Android version, Instagram version, ReelsDetox version.
     validations:
       required: true
   - type: textarea
