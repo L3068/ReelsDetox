@@ -4,6 +4,7 @@ import java.time.Instant
 import java.time.ZoneId
 
 enum class Mode { BLOCK_ALL, DAILY_LIMIT }
+enum class CoverTheme { SYSTEM, LIGHT, DARK }
 
 data class Settings(
     val enabled: Boolean = false,
@@ -11,6 +12,7 @@ data class Settings(
     val mode: Mode = Mode.BLOCK_ALL,
     val dailyLimitMinutes: Int = 15,
     val hideButton: Boolean = true,
+    val coverTheme: CoverTheme = CoverTheme.SYSTEM,
 ) {
     init { require(dailyLimitMinutes in 1..120) { "Daily limit must be between 1 and 120 minutes" } }
 }
@@ -44,6 +46,8 @@ data class ScreenSnapshot(
     val appBounds: Bounds,
     val safeBounds: Bounds = appBounds,
     val complete: Boolean = true,
+    val windowId: Int? = null,
+    val windowBounds: Bounds = appBounds,
 )
 
 /** Serializable ledger only. No screen content or viewing history beyond daily totals. */

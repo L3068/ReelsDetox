@@ -5,6 +5,7 @@ import android.app.Instrumentation
 import android.content.IntentFilter
 import android.provider.Settings as AndroidSettings
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -14,6 +15,7 @@ import dev.reelsguard.MainActivity
 import dev.reelsguard.R
 import dev.reelsguard.ReelsGuardApp
 import dev.reelsguard.core.Mode
+import dev.reelsguard.core.CoverTheme
 import dev.reelsguard.core.Settings
 import dev.reelsguard.data.AppRepository
 import java.util.Collections
@@ -104,6 +106,18 @@ class OnboardingTest {
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText(text(R.string.status_off)).performScrollTo().assertIsDisplayed()
         assertEquals(saved, repository.state.value.settings)
+    }
+
+    @Test fun coverThemeCanOverrideDeviceAppearanceAndSurvivesRecreation() {
+        runBlocking { repository.updateSettings { it.copy(consent = true) } }
+        compose.activityRule.scenario.recreate()
+        compose.onNodeWithText(text(R.string.settings_title)).performClick()
+        compose.onNodeWithText(text(R.string.cover_color_dark)).performScrollTo().performClick()
+        compose.waitUntil(5000) { repository.state.value.settings.coverTheme == CoverTheme.DARK }
+        compose.activityRule.scenario.recreate()
+        compose.onNodeWithText(text(R.string.cover_color_dark)).performScrollTo().assertIsSelected()
+        compose.onNodeWithText(text(R.string.cover_color_device)).performScrollTo().performClick()
+        compose.waitUntil(5000) { repository.state.value.settings.coverTheme == CoverTheme.SYSTEM }
     }
 
     private fun openInformationAndReturn(title: Int, body: Int) {

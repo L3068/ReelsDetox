@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import dev.reelsguard.core.CoverTheme
 import dev.reelsguard.core.Mode
 import dev.reelsguard.core.Settings
 import dev.reelsguard.core.UsageState
@@ -17,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -41,6 +43,7 @@ class AppRepository(context: Context, scope: CoroutineScope) {
         val mode = stringPreferencesKey("mode")
         val limit = intPreferencesKey("limit_minutes")
         val hide = booleanPreferencesKey("hide_button")
+        val coverTheme = stringPreferencesKey("cover_theme")
         val usage = stringPreferencesKey("usage_v1")
     }
 
@@ -48,8 +51,7 @@ class AppRepository(context: Context, scope: CoroutineScope) {
         scope.launch {
             try {
                 store.data.collect { prefs ->
-                    val usage = UsageCodec.decode(prefs[Keys.usage])
-                    mutable.value = AppState(readSettings(prefs), today(usage), true, false, usage)
+                    publishPreferences(prefs)
                 }
             } catch (cancel: CancellationException) { throw cancel }
             catch (_: Exception) { fail() } // Never silently replace corrupt usage with a fresh allowance.
@@ -68,6 +70,7 @@ class AppRepository(context: Context, scope: CoroutineScope) {
             it[Keys.mode] = settings.mode.name
             it[Keys.limit] = settings.dailyLimitMinutes
             it[Keys.hide] = settings.hideButton
+            it[Keys.coverTheme] = settings.coverTheme.name
         }
     }
 
@@ -76,33 +79,56 @@ class AppRepository(context: Context, scope: CoroutineScope) {
 
     suspend fun saveUsage(usage: UsageState): Boolean = write {
         val existing = UsageCodec.decode(it[Keys.usage])
-        val base = if ((existing.logicalEpochMillis ?: Long.MIN_VALUE) > (usage.logicalEpochMillis ?: Long.MIN_VALUE)) existing else usage
-        val merged = (existing.days.keys + usage.days.keys).associateWith { day ->
-            maxOf(existing.days[day] ?: 0L, usage.days[day] ?: 0L)
+        it[Keys.usage] = UsageCodec.encode(mergeUsage(existing, usage))
+    }
+
+    /** Transfer the departing service's final ledger before its asynchronous disk write.
+     * A reconnect in this process must start from this total, not an older durable snapshot.
+     */
+    internal fun publishUsage(usage: UsageState) {
+        mutable.update { current ->
+            val merged = mergeUsage(current.usage, usage)
+            current.copy(usage = merged, usageTodayMs = today(merged))
         }
-        it[Keys.usage] = UsageCodec.encode(base.copy(days = merged))
     }
 
     /** Main UI calls on resume/tick; no background loop or disk write is needed for a date change. */
     fun refreshToday() {
-        mutable.value = mutable.value.copy(usageTodayMs = today(mutable.value.usage))
+        mutable.update { it.copy(usageTodayMs = today(it.usage)) }
     }
 
     private suspend fun write(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit): Boolean = try {
         val prefs = store.edit { block(it) }
-        val usage = UsageCodec.decode(prefs[Keys.usage])
-        mutable.value = AppState(readSettings(prefs), today(usage), true, false, usage)
+        publishPreferences(prefs)
         true
     } catch (cancel: CancellationException) { throw cancel }
     catch (_: Exception) { fail(); false }
 
-    private fun fail() { mutable.value = mutable.value.copy(error = true, ready = false) }
+    private fun publishPreferences(prefs: Preferences) {
+        val durable = UsageCodec.decode(prefs[Keys.usage])
+        val settings = readSettings(prefs)
+        mutable.update { current ->
+            // An older queued write/flow emission must not undo a synchronous service handoff.
+            val usage = mergeUsage(current.usage, durable)
+            AppState(settings, today(usage), true, false, usage)
+        }
+    }
+    private fun mergeUsage(first: UsageState, second: UsageState): UsageState {
+        val base = if ((first.logicalEpochMillis ?: Long.MIN_VALUE) >
+            (second.logicalEpochMillis ?: Long.MIN_VALUE)) first else second
+        val days = (first.days.keys + second.days.keys).associateWith { day ->
+            maxOf(first.days[day] ?: 0L, second.days[day] ?: 0L)
+        }
+        return base.copy(days = days)
+    }
+    private fun fail() { mutable.update { it.copy(error = true, ready = false) } }
     private fun readSettings(p: Preferences) = Settings(
         enabled = p[Keys.enabled] ?: false,
         consent = p[Keys.consent] ?: false,
         mode = runCatching { Mode.valueOf(p[Keys.mode] ?: "BLOCK_ALL") }.getOrDefault(Mode.BLOCK_ALL),
         dailyLimitMinutes = (p[Keys.limit] ?: 15).coerceIn(1, 120),
         hideButton = p[Keys.hide] ?: true,
+        coverTheme = runCatching { CoverTheme.valueOf(p[Keys.coverTheme] ?: "SYSTEM") }.getOrDefault(CoverTheme.SYSTEM),
     )
     private fun today(usage: UsageState): Long = usage.usedOn(Instant.now(), ZoneId.systemDefault(), android.os.SystemClock.elapsedRealtime(), appContext.bootCount())
 }

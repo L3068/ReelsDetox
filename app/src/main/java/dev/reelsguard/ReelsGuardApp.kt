@@ -11,5 +11,8 @@ import dev.reelsguard.core.UsageState
 class ReelsGuardApp : Application() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val repository by lazy { AppRepository(this, scope) }
-    fun checkpoint(usage: UsageState) { scope.launch { repository.saveUsage(usage) } }
+    fun checkpoint(usage: UsageState) {
+        repository.publishUsage(usage)
+        scope.launch { repository.saveUsage(usage) }
+    }
 }

@@ -31,6 +31,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.reelsguard.R
 import dev.reelsguard.core.Mode
+import dev.reelsguard.core.CoverTheme
 import dev.reelsguard.core.Settings
 import dev.reelsguard.data.AppRepository
 import dev.reelsguard.monitoring.RuntimeState
@@ -179,6 +180,7 @@ fun ReelsGuardScreen(repository: AppRepository) {
                     )
                     page == Page.SETTINGS -> SettingsPage(
                         settings = state.settings,
+                        onCoverTheme = { theme -> save { it.copy(coverTheme = theme) } },
                         onPermission = ::setupOrOpenAccessibility,
                         onRevoke = {
                             scope.launch {
@@ -377,10 +379,31 @@ private fun duration(milliseconds: Long): String {
 }
 
 @Composable
-private fun SettingsPage(settings: Settings, onPermission: () -> Unit, onRevoke: () -> Unit) {
+private fun SettingsPage(settings: Settings, onCoverTheme: (CoverTheme) -> Unit, onPermission: () -> Unit, onRevoke: () -> Unit) {
     var showRevoke by rememberSaveable { mutableStateOf(false) }
     Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
     Text(stringResource(R.string.appearance_system), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Card(shape = RoundedCornerShape(24.dp)) {
+        Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(stringResource(R.string.cover_color_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.cover_color_hint), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                CoverTheme.entries.forEachIndexed { index, theme ->
+                    SegmentedButton(
+                        selected = settings.coverTheme == theme,
+                        onClick = { onCoverTheme(theme) },
+                        shape = SegmentedButtonDefaults.itemShape(index, CoverTheme.entries.size),
+                    ) {
+                        Text(stringResource(when (theme) {
+                            CoverTheme.SYSTEM -> R.string.cover_color_device
+                            CoverTheme.LIGHT -> R.string.cover_color_light
+                            CoverTheme.DARK -> R.string.cover_color_dark
+                        }))
+                    }
+                }
+            }
+        }
+    }
     InfoCard(R.string.instagram_languages_title, R.string.instagram_languages)
     Text(stringResource(R.string.language_limitations), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     OutlinedButton(onClick = onPermission, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) { Text(stringResource(R.string.open_accessibility), style = MaterialTheme.typography.bodyLarge) }

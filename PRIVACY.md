@@ -10,9 +10,9 @@ This access recognizes a Reels viewer, measures viewing time, invokes Back under
 
 ## Saved locally
 
-DataStore stores consent, protection settings, the chosen mode/allowance, daily duration totals, time/zone anchors and the public Android boot counter. Daily totals are retained until app data is cleared or the app is uninstalled; dates have no screen content or individual-viewing-session history attached. Cloud backup and device transfer of this data are disabled by app configuration.
+DataStore stores consent, protection settings (including the button cover's theme), the chosen mode/allowance, daily duration totals, time/zone anchors and the public Android boot counter. Daily totals are retained until app data is cleared or the app is uninstalled; dates have no screen content or individual-viewing-session history attached. Cloud backup and device transfer of this data are disabled by app configuration. Cover colors use the device theme or a manual Light/Dark choice, with no screenshot capture or additional access.
 
-No screen dumps, screenshots, messages, usernames, URLs, credentials or account information are stored by the app. In debug builds, an explicitly requested ADB service dump reports only classification, geometry, overlay state and sanitized exception code locations. It contains no node text, descriptions or account identifiers. No data is sent by the application. Build tools and GitHub downloads are separate from the app and follow their own privacy policies.
+No screen dumps, screenshots, messages, usernames, URLs, credentials or account information are stored by the app. In debug builds, an explicitly requested ADB service dump reports only candidate control identifiers/counts, classification, geometry, overlay state and sanitized exception code locations. It contains no node text, descriptions or account identifiers. No data is sent by the application. Build tools and GitHub downloads are separate from the app and follow their own privacy policies.
 
 ## Control
 

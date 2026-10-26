@@ -8,7 +8,7 @@ A local-only, open-source Android experiment for reducing Instagram Reels withou
 
 - **Complete Blocking:** immediate Back on a newly detected Reels viewer, with a temporary opaque viewer guard and at most one retry; no app kill or Home action.
 - **Daily Time Limit:** 1–120 minutes, local daily totals, monotonic viewing time, midnight/DST handling, restart persistence and timezone quota carry.
-- **Optional Reels button cover:** a touch-consuming accessibility overlay positioned from validated node bounds, only while blocking applies. This visually covers the button; it does not remove it.
+- **Optional Reels button cover:** a flat, touch-consuming accessibility overlay positioned from validated node bounds, only while blocking applies. Its color follows the device theme; Settings → Button cover color offers Light/Dark overrides for Instagram's own theme. This visually covers the button; it does not remove it or capture screenshots.
 - English-only UI regardless of device language, light/dark Material 3 interface, one-screen consent setup, spacious dashboard, settings, privacy and about.
 - Disable protection and withdraw consent at any time. No Internet permission, account, backend, analytics, ads or accessibility-content storage.
 
@@ -16,7 +16,7 @@ A local-only, open-source Android experiment for reducing Instagram Reels withou
 
 Actual English UI captured on the Android 16 test emulator:
 
-<img src="docs/screenshots/onboarding-en.png" width="280" alt="English consent onboarding" /> <img src="docs/screenshots/dashboard-en.png" width="280" alt="English dashboard with protection disabled" />
+<img src="docs/screenshots/onboarding-en.png" width="280" alt="English consent onboarding" /> <img src="docs/screenshots/dashboard-en.png" width="280" alt="English dashboard with protection disabled" /> <img src="docs/screenshots/settings-en.png" width="280" alt="English settings with device, light and dark button-cover colors" />
 
 ## Build
 
@@ -55,6 +55,7 @@ docs/                                    feasibility, installation, manual tests
 - Candidate view IDs are not official Instagram APIs. No version is currently declared supported. Unknown/hidden/ambiguous trees fail open to protect DMs, Stories, profiles and ordinary posts.
 - All Reels entry routes share viewer classification; external links may have no previous Instagram screen in Android's back stack. Back can return to the originating app. ReelsDetox does not force-stop Instagram.
 - Button covers require an exact navigation ID and safe bounds. Viewer detection also accepts exact action labels in English, Hungarian, German, French, Spanish, Italian and Portuguese. Other languages or Instagram versions may affect detection; the exact navigation ID itself is language-independent. API 26–29, secondary displays and ambiguous windows use safe fallbacks. Event scheduling leaves a small unavoidable cleanup race.
+- Cover colors use a light/dark navigation palette. Instagram theme changes or experiments may use different colors; there is no automatic screen-color sampling.
 - Process termination may lose roughly the last one-second checkpoint plus I/O latency. Force-stop or revoked access can stop protection; saved usage remains. Clearing data/uninstalling resets it by design.
 - Clock edits are handled conservatively. Timezone changes carry quota, and wall-clock edits do not move the same-boot reset schedule. Offline time cannot be made tamper-proof.
 - A successful Back request is not proof that Instagram exited its viewer. A second attempt is allowed after 250 ms within the same episode; a confirmed new entry has no inherited cooldown. A viewer still open after both attempts remains covered and is reported, without an endless Back loop.

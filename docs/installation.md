@@ -22,6 +22,8 @@ Android may restrict accessibility access for sideloaded apps. Only for an APK/s
 
 No special "draw over other apps" permission is required. There is no Usage Access or notification permission. The optional cover is provided by the enabled accessibility service.
 
+The button cover follows the device's light/dark appearance. If Instagram uses a different theme, open ReelsDetox → Settings → Button cover color and select Light or Dark. No screenshot permission is needed. Colors match a fixed Instagram navigation palette; app versions or theme experiments may differ.
+
 ## Disable / uninstall / updates
 
 Turn protection off in the dashboard, withdraw consent in ReelsDetox Settings, or disable its service in Android Accessibility. Uninstall normally. The app never prevents this.

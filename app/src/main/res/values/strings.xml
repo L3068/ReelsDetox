@@ -28,6 +28,11 @@
     <string name="open_accessibility">Open Accessibility settings</string>
     <string name="settings_title">Settings</string>
     <string name="cover_title">Cover Reels button</string>
+    <string name="cover_color_title">Button cover color</string>
+    <string name="cover_color_hint">Match Instagram’s theme. Choose Light or Dark if Instagram uses a different theme from your device.</string>
+    <string name="cover_color_device">Device</string>
+    <string name="cover_color_light">Light</string>
+    <string name="cover_color_dark">Dark</string>
     <string name="appearance_system">App language: English. Appearance follows your device.</string>
     <string name="instagram_languages_title">Instagram control languages</string>
     <string name="instagram_languages">English, Hungarian, German, French, Spanish, Italian, Portuguese.</string>

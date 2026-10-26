@@ -22,15 +22,19 @@ For both Complete Blocking and Daily Limit (before and after exhaustion):
 - [ ] Cover corresponds exactly to the real clickable Reels navigation node, consumes taps, and is visible as a cover.
 - [ ] Cover off toggle takes effect immediately; moving valid bounds updates the existing cover without remove/add flicker; within daily allowance no cover is shown.
 - [ ] Missing/multiple candidates: no guessed fixed-coordinate cover.
-- [ ] App switch, notification shade, permission dialog, keyboard, lock screen, Home and Recents: no cover outside Instagram.
+- [ ] App switch, notification shade, permission dialog, keyboard, lock screen, Home and Recents: no display cover over another app or System UI. On API 34+, an existing child guard may remain inside Instagram underneath the shade; notification controls stay usable. Check the older fallback separately.
 - [ ] Rotate, change display/font scale, gesture vs three-button navigation: no system-button or neighboring-tab obstruction.
 - [ ] Split-screen, secondary display and API 26–29: safe documented fallback.
-- [ ] Instagram dark/light modes: cover remains legible (it is not claimed to blend with Instagram).
+- [ ] Device light/dark modes: button cover matches the adjacent Instagram navigation background; no rounded corners expose the icon.
+- [ ] Instagram uses a separate theme: Settings → Button cover color → Light/Dark overrides the device theme, survives restart, and recolors an existing cover without moving its bounds. Device restores automatic theme following. Record palette differences on other versions.
 
 ## Timing and recovery
 
 - [ ] Set 1 minute; only actual detected viewing counts; stationary video reaches limit without an event.
 - [ ] Background/lock pauses immediately; resuming continues the saved total.
+- [ ] A blocked viewer behind a successfully attached opaque guard does not consume more allowance; failed guard creation continues actual-viewing accounting.
+- [ ] Dense content events do not bypass one-second active checkpoints; disabling/revoking does not cause anchor-only writes or screen-tree reads.
+- [ ] Service disconnect/reconnect before a final disk write completes retains both sessions' totals.
 - [ ] Switch modes or disable/re-enable: no quota reset.
 - [ ] Change allowance 1 ↔ 120, including below already-used duration: policy updates immediately.
 - [ ] Natural local midnight, DST short/long day, timezone travel: expected reset/carry rules from feasibility report.

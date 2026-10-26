@@ -15,6 +15,7 @@ object InstagramCandidates {
         "$PACKAGE_NAME:id/clips_share_button", "$PACKAGE_NAME:id/comment_button", "$PACKAGE_NAME:id/direct_share_button")
     val otherScreenIds: Set<String> = setOf(
         "$PACKAGE_NAME:id/reel_viewer", "$PACKAGE_NAME:id/direct_thread_message_list",
+        "$PACKAGE_NAME:id/thread_fragment_container", "$PACKAGE_NAME:id/message_list",
         "$PACKAGE_NAME:id/feed_timeline", "$PACKAGE_NAME:id/profile_grid")
     val navigationIds: Set<String> = setOf("$PACKAGE_NAME:id/clips_tab")
     val otherNavigationIds = setOf("$PACKAGE_NAME:id/feed_tab", "$PACKAGE_NAME:id/direct_tab",
