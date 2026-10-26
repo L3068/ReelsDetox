@@ -80,4 +80,5 @@
     <string name="accessibility_service_description">Recognizes Instagram Reels, applies your chosen blocking or daily time limit, and optionally covers the Reels navigation button. Screen content stays on your device and is not stored. Enable only after reviewing and accepting the in-app disclosure.</string>
     <string name="storage_error_body">Settings or usage could not be read or saved, so protection is paused. Restart ReelsGuard and check available storage. Your allowance has not been reset.</string>
     <string name="status_paused">Monitoring is paused</string>
+    <string name="reels_blocked">Reels blocked</string>
 </resources>

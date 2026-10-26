@@ -8,19 +8,19 @@ Record date, ReelsGuard commit, phone model, Android build/API, Instagram versio
 
 For both Complete Blocking and Daily Limit (before and after exhaustion):
 
-- [ ] Home → dedicated Reels tab: blocked viewer returns once; Home remains usable.
+- [ ] Home → dedicated Reels tab: blocked viewer returns with at most one retry; Home remains usable.
 - [ ] Explore → Reel; profile → Reel; shared external Reel link; DM → shared Reel: classify the actual viewer, not its preview/link.
 - [ ] Home image/carousel, ordinary feed video, Explore image, profile grid: no Back, no Reels timing.
 - [ ] Open/read/write DM and shared-Reel preview: no Back or timing before viewer opens.
 - [ ] Stories and Story replies: never classified as Reels (Instagram's internal `reel` naming can refer to Stories).
 - [ ] Unknown/incomplete/hidden node trees: no navigation, no coverage and no timing.
-- [ ] Rejected Back or unchanged viewer: no repeat Back loop; status shows rejected action when Android reports failure.
+- [ ] Rejected Back or unchanged viewer: at most two attempts per episode; no unbounded Back loop; status reports rejection or a viewer still open after the retry cooldown.
 - [ ] Reel with comments/share sheet/keyboard: fail open while ambiguous; ordinary interactions remain available.
 
 ## Covers
 
 - [ ] Cover corresponds exactly to the real clickable Reels navigation node, consumes taps, and is visible as a cover.
-- [ ] Cover off toggle takes effect immediately; within daily allowance no cover is shown.
+- [ ] Cover off toggle takes effect immediately; moving valid bounds updates the existing cover without remove/add flicker; within daily allowance no cover is shown.
 - [ ] Missing/multiple candidates: no guessed fixed-coordinate cover.
 - [ ] App switch, notification shade, permission dialog, keyboard, lock screen, Home and Recents: no cover outside Instagram.
 - [ ] Rotate, change display/font scale, gesture vs three-button navigation: no system-button or neighboring-tab obstruction.

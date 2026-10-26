@@ -8,13 +8,14 @@ android {
     defaultConfig {
         applicationId = "dev.reelsguard"
         minSdk = 26
-        resourceConfigurations += listOf("en")
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }
+    androidResources { localeFilters += listOf("en") }
+    bundle { language { enableSplit = false } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     lint { abortOnError = true; checkReleaseBuilds = true }
 }

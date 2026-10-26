@@ -12,7 +12,6 @@ import android.view.accessibility.AccessibilityEvent
 import dev.reelsguard.ReelsGuardApp
 import dev.reelsguard.data.bootCount
 import dev.reelsguard.core.BackGate
-import dev.reelsguard.core.Bounds
 import dev.reelsguard.core.CandidateInstagramClassifier
 import dev.reelsguard.core.Classification
 import dev.reelsguard.core.OverlayPolicy
@@ -51,7 +50,7 @@ class ReelsAccessibilityService : AccessibilityService() {
     private var connected = false
     private var receiverRegistered = false
     private var navigationFailed = false
-    private var lastCoverBounds: Bounds? = null
+    private var checkpointInFlight = false
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -77,8 +76,8 @@ class ReelsAccessibilityService : AccessibilityService() {
         scope.launch {
             repository.state.map { Triple(it.settings, it.ready, it.error) }.distinctUntilChanged().collect {
                 // User's disable/revoke takes effect before any suspended persistence operation resumes.
-                if (!it.first.enabled || !it.first.consent || !it.second || it.third) {
-                    lastCoverBounds = null
+                if (!it.first.hideButton || !it.second || it.third ||
+                    !ProtectionPolicy.shouldBlock(it.first, tracker?.usedTodayMillis ?: repository.state.value.usageTodayMs)) {
                     cover.hide()
                 }
                 signal()
@@ -102,40 +101,18 @@ class ReelsAccessibilityService : AccessibilityService() {
         // Overlay's own accessibility events must not create an add/remove feedback loop.
         if (event.packageName?.toString() == packageName && reader.foreground()) return
         val foreground = reader.foreground()
-        if (event.packageName?.toString() == INSTAGRAM) {
-            showCachedCoverImmediately()
-            refreshCoverImmediately()
-        }
-        if (!foreground) cover.hideDelayed()
+        val mayInvalidateBounds = event.packageName?.toString() == INSTAGRAM ||
+            event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
+            event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        if (!foreground || (checkpointInFlight && mayInvalidateBounds)) cover.hide()
         // Content events from background apps are ignored; metadata-only window events are needed
         // across all packages to promptly remove covers on app/system-window transitions.
         if (event.packageName?.toString() != INSTAGRAM && foreground &&
             event.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        // A scroll can temporarily invalidate the tree, but evaluate() immediately re-reads it
-        // and either updates the exact button bounds or removes the stale cover.
+        // During a checkpoint the actor cannot inspect new geometry yet: remove the old touch
+        // target synchronously. Otherwise the serialized evaluation updates valid bounds in place.
         signal()
-    }
-
-    private fun refreshCoverImmediately() {
-        val app = repository.state.value
-        if (!app.ready || app.error || !app.settings.enabled || !app.settings.consent ||
-            !ProtectionPolicy.shouldBlock(app.settings, tracker?.usedTodayMillis ?: 0L)) return
-        val screen = reader.read() ?: return
-        val bounds = OverlayPolicy.candidate(screen, app.settings, true)
-        if (bounds != null && reader.foreground()) {
-            lastCoverBounds = bounds
-            cover.show(bounds)
-        }
-    }
-
-    private fun showCachedCoverImmediately() {
-        val app = repository.state.value
-        val cached = lastCoverBounds
-        if (cached != null && app.ready && !app.error && app.settings.enabled && app.settings.consent &&
-            ProtectionPolicy.shouldBlock(app.settings, tracker?.usedTodayMillis ?: 0L)) {
-            cover.show(cached)
-        }
     }
 
     private fun signal() { revision++; signals.trySend(Unit) }
@@ -158,9 +135,19 @@ class ReelsAccessibilityService : AccessibilityService() {
         val now = SystemClock.elapsedRealtime()
         val usage = timing.update(viewing, now, Instant.now(), ZoneId.systemDefault(), bootCount())
         val blocking = ProtectionPolicy.shouldBlock(settings, timing.usedTodayMillis)
+        // Refresh valid bounds before disk I/O, using the same guarded snapshot as detection.
+        // In-place layout updates avoid flicker without retaining a touch target on unknown UI.
+        val bounds = screen?.let { OverlayPolicy.candidate(it, settings, blocking) }
+        if (bounds != null && reader.foreground()) cover.show(bounds) else cover.hide()
         if (usage != lastSaved && (viewing != wasViewing || usage.days != lastSaved?.days ||
                 (viewing && now - lastSaveAt >= 1_000))) {
-            if (!repository.saveUsage(usage)) {
+            val saved = try {
+                checkpointInFlight = true
+                repository.saveUsage(usage)
+            } finally {
+                checkpointInFlight = false
+            }
+            if (!saved) {
                 cover.hide(); stopTicker()
                 timing.update(false, SystemClock.elapsedRealtime(), Instant.now(), ZoneId.systemDefault(), bootCount())
                 wasViewing = false
@@ -182,14 +169,11 @@ class ReelsAccessibilityService : AccessibilityService() {
         if (back.observe(classification, true, blocking, now)) {
             cover.hide()
             navigationFailed = !performGlobalAction(GLOBAL_ACTION_BACK)
-        } else {
-            val bounds = OverlayPolicy.candidate(screen!!, settings, blocking)
-            if (bounds != null && reader.foreground()) {
-                lastCoverBounds = bounds
-                cover.show(bounds)
-            } else cover.hideDelayed()
+        } else if (blocking && classification == Classification.REELS && back.retryBudgetExhausted(now)) {
+            // Accepted Back is not proof of exit; report a viewer still open after both attempts.
+            navigationFailed = true
         }
-        if (classification == Classification.OTHER) navigationFailed = false
+        if (!blocking || classification == Classification.OTHER) navigationFailed = false
         RuntimeState.publish(ServiceStatus(
             connected = true,
             detection = classification.name.lowercase(),

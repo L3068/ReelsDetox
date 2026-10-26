@@ -17,12 +17,12 @@ object OverlayPolicy {
             !snapshot.appBounds.contains(snapshot.safeBounds)) return null
         val candidates = snapshot.nodes.filter { it.visible && it.clickable &&
             it.label == UiLabel.REELS &&
-            (it.viewId in InstagramCandidates.navigationIds || it.viewId == null) }
+            it.viewId in InstagramCandidates.navigationIds }
         if (candidates.size != 1) return null
         val bounds = candidates.single().bounds
         val safe = snapshot.safeBounds
         return bounds.takeIf {
-            snapshot.appBounds.contains(it) &&
+            safe.contains(it) &&
                 it.width <= safe.width / 4 && it.height <= safe.height / 6 &&
                 it.width >= safe.width / 30 && it.height >= safe.height / 100 &&
                 it.top >= safe.top + safe.height * 3 / 4
@@ -30,24 +30,32 @@ object OverlayPolicy {
     }
 }
 
-/** Repeats Back attempts for a still-confirmed blocked viewer after the cooldown. UNKNOWN never
- * re-arms a viewer. Foreground exit or positive OTHER evidence resets the episode.
+/** Allows one retry for a still-confirmed blocked viewer after the cooldown. UNKNOWN and rule
+ * toggles never refill the retry budget. Foreground exit or positive OTHER resets the episode.
  * All calls must come from one serialized service context.
  */
 class BackGate(private val cooldownMillis: Long = 1500) {
     private var lastAttempt: Long? = null
+    private var attempts = 0
 
     init { require(cooldownMillis >= 0) }
 
     fun observe(classification: Classification, instagramForeground: Boolean, shouldBlock: Boolean, elapsedMillis: Long): Boolean {
         if (!instagramForeground || classification == Classification.OTHER) {
-            lastAttempt = null
+            attempts = 0
             return false
         }
-        if (!shouldBlock || classification != Classification.REELS) return false
+        if (!shouldBlock || classification != Classification.REELS || attempts >= 2) return false
         val last = lastAttempt
         if (last != null && (elapsedMillis < last || elapsedMillis - last < cooldownMillis)) return false
         lastAttempt = elapsedMillis
+        attempts++
         return true
+    }
+
+    /** Caller must separately confirm that the blocked viewer is still open on a fresh snapshot. */
+    fun retryBudgetExhausted(elapsedMillis: Long): Boolean {
+        val last = lastAttempt ?: return false
+        return attempts >= 2 && elapsedMillis >= last && elapsedMillis - last >= cooldownMillis
     }
 }

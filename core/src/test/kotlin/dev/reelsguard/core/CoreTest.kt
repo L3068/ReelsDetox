@@ -76,15 +76,12 @@ class CoreTest {
             Bounds(400, 1750, 550, 1870), clickable = true)
         assertEquals(button.bounds, OverlayPolicy.candidate(screen(button), enabled, true))
         val localizedButton = button.copy(viewId = null)
-        assertEquals(localizedButton.bounds, OverlayPolicy.candidate(screen(localizedButton), enabled, true))
-        val partiallySystemCovered = button.copy(bounds = Bounds(400, 1800, 550, 1950))
-        assertEquals(partiallySystemCovered.bounds,
-            OverlayPolicy.candidate(screen(partiallySystemCovered), enabled, true))
+        assertNull(OverlayPolicy.candidate(screen(localizedButton), enabled, true))
         assertNull(OverlayPolicy.candidate(screen(button), enabled, false))
         assertNull(OverlayPolicy.candidate(screen(button), enabled.copy(hideButton = false), true))
         assertNull(OverlayPolicy.candidate(screen(button), Settings(), true))
         assertNull(OverlayPolicy.candidate(screen(button, button.copy(bounds = Bounds(600, 1750, 750, 1870))), enabled, true))
-        for (bounds in listOf(Bounds(400, 1950, 550, 2100), app, Bounds(400, 100, 550, 220), Bounds(-1, 1750, 150, 1870))) {
+        for (bounds in listOf(Bounds(400, 1850, 550, 1990), Bounds(400, 1950, 550, 2100), app, Bounds(400, 100, 550, 220), Bounds(-1, 1750, 150, 1870))) {
             assertNull(OverlayPolicy.candidate(screen(button.copy(bounds = bounds)), enabled, true))
         }
         assertNull(OverlayPolicy.candidate(screen(button.copy(viewId = null, label = null)), enabled, true))
@@ -102,15 +99,14 @@ class CoreTest {
         assertTrue(gate.observe(Classification.REELS, true, true, 8000))
     }
 
-    @Test fun `cooldown covers separate viewer episodes and disable cannot retrigger`() {
+    @Test fun `cooldown covers separate viewer episodes and rule toggles`() {
         val gate = BackGate(cooldownMillis = 1500)
         assertTrue(gate.observe(Classification.REELS, true, true, 0))
         gate.observe(Classification.REELS, true, false, 100)
         assertTrue(gate.observe(Classification.REELS, true, true, 2000))
         gate.observe(Classification.OTHER, true, true, 2100)
-        assertTrue(gate.observe(Classification.REELS, true, true, 2200))
+        assertFalse(gate.observe(Classification.REELS, true, true, 2200))
         gate.observe(Classification.OTHER, true, true, 2300)
-        assertTrue(gate.observe(Classification.REELS, true, true, 2400))
         assertTrue(gate.observe(Classification.REELS, true, true, 4000))
     }
 
